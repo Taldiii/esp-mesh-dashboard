@@ -8,6 +8,7 @@ telemetry into the dashboard so you can test:
   3. Real-time chart with gaps (missing packets rendered as gaps, not zeros)
   4. Station roster & health headline (live, degraded, silent states)
   5. AI Chatbot (grounded conversational analysis via DeepSeek)
+  6. Relative sound level (MAX4466 microphone, dBFS) with an injected noise event
 """
 
 import json
@@ -102,6 +103,7 @@ def run_simulation():
     print("  • Samples 1-20:  Baseline collection ('Collecting baseline: X/20')")
     print("  • Sample 22:     Injecting anomaly spike -> triggers ANOMALY insight")
     print("  • Samples 23-35: Steady upward ramp -> triggers RISING trend insight")
+    print("  • Sample 26:     Loud noise event on mic1.dbfs (-18 dBFS) -> sound anomaly")
     print("  • Chatbot:       Ask questions in the AI ASSISTANT console!")
     print("Press Ctrl+C to stop.")
     print("=" * 65)
@@ -121,7 +123,8 @@ def run_simulation():
         "rssi": -89,
         "rssiSourceNodeId": "AA:BB:CC:11:22:02",
         "readings": [
-            {"sensorId": "ldr1", "channel": "raw", "value": 720.0, "unit": "adc_counts"}
+            {"sensorId": "ldr1", "channel": "raw", "value": 720.0, "unit": "adc_counts"},
+            {"sensorId": "mic1", "channel": "dbfs", "value": -61.2, "unit": "dBFS"},
         ],
     }
     send_line(json.dumps(frame_node3))
@@ -133,6 +136,13 @@ def run_simulation():
             # Baseline is ~1200 adc counts with minor jitter, plus temperature & humidity
             temp_1 = 28.5 + 2.0 * math.sin(t / 8.0)
             hum_1 = 62.0 + 5.0 * math.cos(t / 6.0)
+            # Relative microphone level: a quiet room floor drifting around -42 dBFS
+            sound_1 = -42.0 + 3.5 * math.sin(t / 4.0) + random.uniform(-1.5, 1.5)
+
+            if t == 26:
+                # Injected noise event (hand clap / drill) -> insight anomaly on the sound metric
+                sound_1 = -18.0
+                print(f"[Sample {seq_1:02d}] *NOISE EVENT* on node-001: mic1.dbfs = {sound_1:g} dBFS (Baseline ~-42 dBFS)")
 
             if t == 22:
                 # Injected anomaly spike on LDR
@@ -154,6 +164,7 @@ def run_simulation():
             readings_1 = [
                 {"sensorId": "temp", "channel": "ambient", "value": round(temp_1, 1), "unit": "°C"},
                 {"sensorId": "hum", "channel": "relative", "value": round(hum_1, 0), "unit": "%"},
+                {"sensorId": "mic1", "channel": "dbfs", "value": round(sound_1, 1), "unit": "dBFS"},
             ]
             if val_1 is not None:
                 readings_1.append({"sensorId": "ldr1", "channel": "raw", "value": round(val_1, 1), "unit": "adc_counts"})
@@ -173,6 +184,7 @@ def run_simulation():
             # --- Node 2: Multi-hop sensor node (relayed via node 1) ---
             time.sleep(1.0)
             val_2 = 450.0 + 20.0 * math.sin(seq_2 / 3.0) + random.uniform(-10, 10)
+            sound_2 = -55.0 + 2.0 * math.sin(seq_2 / 5.0) + random.uniform(-1.0, 1.0)
             frame_node2 = {
                 "origin": "AA:BB:CC:11:22:02",
                 "bootId": boot_2,
@@ -181,7 +193,8 @@ def run_simulation():
                 "rssi": random.choice([-74, -75, -76, -77]),
                 "rssiSourceNodeId": "AA:BB:CC:11:22:01",  # Relayed through Node 1
                 "readings": [
-                    {"sensorId": "ldr1", "channel": "raw", "value": round(val_2, 1), "unit": "adc_counts"}
+                    {"sensorId": "ldr1", "channel": "raw", "value": round(val_2, 1), "unit": "adc_counts"},
+                    {"sensorId": "mic1", "channel": "dbfs", "value": round(sound_2, 1), "unit": "dBFS"},
                 ],
             }
             send_line(json.dumps(frame_node2))

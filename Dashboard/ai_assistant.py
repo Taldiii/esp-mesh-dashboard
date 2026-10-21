@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -9,6 +10,9 @@ import httpx
 from insights import calculate_insights
 
 logger = logging.getLogger("esp_mesh_dashboard.ai")
+
+SOUND_KEY_CODES = {"s", "db", "dbfs", "spl"}
+SOUND_KEY_HINTS = ("sound", "mic", "noise", "audio")
 
 
 def calculate_dew_point(temperature: float, humidity: float) -> Optional[float]:
@@ -25,6 +29,54 @@ def calculate_dew_point(temperature: float, humidity: float) -> Optional[float]:
         return round(dew_point, 2)
     except (ValueError, ZeroDivisionError):
         return None
+
+
+def _is_sound_key(key: str) -> bool:
+    """True for metrics that come from the microphone rather than a climate sensor."""
+    code = re.split(r"[._\s-]", key)[-1].lower()
+    if code in SOUND_KEY_CODES:
+        return True
+    lower = key.lower()
+    return any(hint in lower for hint in SOUND_KEY_HINTS)
+
+
+def analyse_sound_level(payload: Dict[str, Any], history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Summarise the relative noise level: latest value, baseline mean, peak, spike flag.
+
+    MAX4466 boards have no absolute acoustic reference, so every number here is a
+    relative dBFS level and only comparable within the same node and gain setting.
+    """
+    key = next((candidate for candidate in payload if _is_sound_key(candidate)), None)
+    if key is None:
+        return None
+
+    latest = payload.get(key)
+    if isinstance(latest, bool) or not isinstance(latest, (int, float)) or not math.isfinite(latest):
+        return None
+
+    values: List[float] = []
+    for sample in history:
+        value = sample.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            continue
+        values.append(float(value))
+
+    baseline = values[-101:-1] if len(values) > 1 else []
+    mean = round(sum(baseline) / len(baseline), 1) if baseline else None
+    peak = round(max(values), 1) if values else None
+    delta = round(float(latest) - mean, 1) if mean is not None else None
+
+    return {
+        "metric": key,
+        "unit": "dBFS",
+        "calibration": "relative only (MAX4466, no absolute acoustic reference)",
+        "latestRelativeLevel": round(float(latest), 1),
+        "baselineMean": mean,
+        "peak": peak,
+        "baselineSamples": len(baseline),
+        "deltaFromBaseline": delta,
+        "noiseEventDetected": bool(delta is not None and delta >= 6.0),
+    }
 
 
 def get_ai_config() -> Dict[str, Any]:
@@ -158,14 +210,33 @@ def build_grounding_context(receiver: Any, selected_node_id: Optional[str] = Non
                         "assessment": rain_assessment,
                     }
 
+            sound_analysis = analyse_sound_level(payload, history)
+
             selected_context = {
                 "nodeId": selected_node_id,
                 "displayName": selected_node.get("displayName") or selected_node_id,
                 "latestPayload": payload,
                 "sampleCount": len(history),
                 "weatherAnalysis": weather_analysis,
+                "soundAnalysis": sound_analysis,
                 "statisticalInsights": insights_res.get("insights", []),
             }
+
+            if sound_analysis:
+                baseline = sound_analysis["baselineMean"]
+                summary_lines.append(
+                    f"\nSound level for {selected_context['displayName']} "
+                    f"(relative {sound_analysis['unit']}, uncalibrated MAX4466):\n"
+                    f"  Latest: {sound_analysis['latestRelativeLevel']} dBFS, "
+                    f"peak {sound_analysis['peak']} dBFS over "
+                    f"{sound_analysis['baselineSamples'] + 1} sample(s)"
+                    + (f", baseline mean {baseline} dBFS" if baseline is not None else "")
+                    + (
+                        f"\n  Noise event: latest is {sound_analysis['deltaFromBaseline']} dB above baseline"
+                        if sound_analysis["noiseEventDetected"]
+                        else ""
+                    )
+                )
 
             if weather_analysis:
                 summary_lines.append(
@@ -201,13 +272,18 @@ def build_system_prompt(grounding: Dict[str, Any]) -> str:
         "   - Use temperature, humidity, and dew point.\n"
         "   - Note that rain requires cooling near dew point and cloud condensation nuclei; hot, low-humidity air (like 40°C with 30% RH) has a large dew point depression (~19°C dew point), making rain very unlikely under stable conditions.\n"
         "   - Note that true barometric weather forecasting requires a barometric pressure sensor (e.g. BMP280/BME280).\n"
-        "4. Be extremely brief. Default to one to three short sentences (under 45 words). "
+        "4. Sound readings come from an uncalibrated MAX4466 microphone and are RELATIVE levels in dBFS "
+        "(0 dBFS = ADC full scale, -90 dBFS = silence). Never call them dB SPL or a calibrated noise level. "
+        "Interpret them against the same station's own baseline: +6 dB is roughly double the signal amplitude "
+        "(four times the acoustic power), so use them to flag noise events, machinery activity or a sudden quiet. "
+        "If the user asks what the sound data is for, answer in that operational sense, not as a decibel meter.\n"
+        "5. Be extremely brief. Default to one to three short sentences (under 45 words). "
         "A full telemetry dump is forbidden unless the user explicitly asks for a report, "
         "an audit, or a comparison.\n"
-        "5. Greetings, thanks and small talk get a single short line. Do not recite station "
+        "6. Greetings, thanks and small talk get a single short line. Do not recite station "
         "readings, statistics or trends unless the question actually needs them.\n"
-        "6. Name only the stations relevant to the question; never list every station by default.\n"
-        "7. Provide output in clear plain text without markdown formatting (no asterisks, bolding, hashes, or backticks) so it renders cleanly in an instrument terminal."
+        "7. Name only the stations relevant to the question; never list every station by default.\n"
+        "8. Provide output in clear plain text without markdown formatting (no asterisks, bolding, hashes, or backticks) so it renders cleanly in an instrument terminal."
     )
 
 

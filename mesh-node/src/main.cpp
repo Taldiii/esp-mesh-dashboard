@@ -3,6 +3,7 @@
 #include "SensorManager.h"
 #include "LdrSensor.h"
 #include "EnvironmentalSensor.h"
+#include "SoundSensor.h"
 
 #include <climits>
 #include <cstring>
@@ -10,6 +11,7 @@
 
 #define SDA 18
 #define SCL 19
+#define MIC_PIN 34
 
 // put function declarations here:
 void sendMessage(const char *message);
@@ -20,6 +22,7 @@ EspNowMesh mesh;
 SensorManager sensorManager;
 LdrSensor ldrSensor("ldr1", 35);
 EnvironmentalSensor environmentalSensor("env1");
+SoundSensor soundSensor("mic1", MIC_PIN, 50);
 
 const char kSendDataCommand[] = "SEND_DATA";
 const char kChangeIntervalCommand[] = "CHANGE_INTERVAL";
@@ -39,6 +42,10 @@ void setup()
   if (!sensorManager.add(environmentalSensor))
   {
     Serial.println("Failed to add environmental sensor");
+  }
+  if (!sensorManager.add(soundSensor))
+  {
+    Serial.println("Failed to add sound sensor");
   }
   if (!sensorManager.begin())
   {

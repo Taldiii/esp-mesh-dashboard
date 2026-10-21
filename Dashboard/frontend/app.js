@@ -41,6 +41,7 @@ const els = {
   chartNode: document.getElementById("chart-node"),
   chartSeq: document.getElementById("chart-seq"),
   chartLegend: document.getElementById("chart-legend"),
+  chartSeries: document.getElementById("chart-series"),
   overviewTab: document.getElementById("overview-tab"),
   compareTab: document.getElementById("compare-tab"),
   overviewView: document.getElementById("overview-view"),
@@ -82,6 +83,7 @@ const state = {
   selected: null,
   activeView: "overview",
   compareMetric: null,
+  chartSeriesKey: null,
   nodes: new Map(),
   samples: new Map(),
   historyLoaded: new Set(),
@@ -468,12 +470,25 @@ function metricCode(key) {
   return key.split(/[._\s-]/).pop().toUpperCase();
 }
 
+/* Single-letter codes the firmware emits, in the order SensorManager samples them. */
+const KNOWN_CODES = ["L", "T", "H", "P", "S"];
+
+/* Sound is the one metric whose unit is relative (dBFS from a MAX4466), so it
+   needs an explicit test: code "S"/"DB"/"DBFS"/"SPL" or a telling key name. */
+function isSoundKey(key) {
+  const code = metricCode(key);
+  if (code === "S" || code === "DB" || code === "DBFS" || code === "SPL") return true;
+  const lower = key.toLowerCase();
+  return ["sound", "mic", "noise", "audio", "spl", "dbfs"].some((token) => lower.includes(token));
+}
+
 function formatMetricLabel(key) {
   const code = metricCode(key);
   if (code === "L") return "Relative brightness";
   if (code === "T") return "Temperature";
   if (code === "H") return "Humidity";
   if (code === "P") return "Pressure";
+  if (isSoundKey(key)) return "Sound level";
 
   const lower = key.toLowerCase();
   if (lower.includes("temp")) return "Temperature";
@@ -487,6 +502,7 @@ function metricDefaultUnit(key) {
   if (code === "T") return "°C";
   if (code === "H") return "%";
   if (code === "P") return "Pa";
+  if (isSoundKey(key)) return "dBFS";
 
   const lower = key.toLowerCase();
   if (lower.includes("temp")) return "°C";
@@ -506,10 +522,10 @@ function metricCards(values, node) {
   const units = (node && node.units) || {};
 
   for (const [k, v] of Object.entries(payload)) {
-    if (!Number.isFinite(Number(v)) || cards.length >= 4) continue;
+    if (!Number.isFinite(Number(v)) || cards.length >= 5) continue;
     const label = formatMetricLabel(k);
     const code = metricCode(k);
-    const unit = ["L", "T", "H", "P"].includes(code) ? metricDefaultUnit(k) : (units[k] || metricDefaultUnit(k));
+    const unit = KNOWN_CODES.includes(code) ? metricDefaultUnit(k) : (units[k] || metricDefaultUnit(k));
     const decimals = metricDecimals(k);
     cards.push({ label, unit, decimals, value: Number(v), key: k });
   }
@@ -719,8 +735,9 @@ function medianInterval(samples) {
   return ds[Math.floor(ds.length / 2)] || 3000;
 }
 
-function chartKeys(samples) {
-  const metaUnits = (state.nodes.get(state.selected) || {}).units || {};
+/* Every numeric metric present in the samples, ordered for display:
+   temperature, humidity, pressure, sound, then brightness and anything else. */
+function sampleMetricKeys(samples) {
   const found = new Set();
   for (const s of samples) {
     for (const [k, v] of Object.entries(s)) {
@@ -730,23 +747,33 @@ function chartKeys(samples) {
     }
   }
 
-  const sorted = Array.from(found).sort((a, b) => {
+  return Array.from(found).sort((a, b) => {
     const priority = (key) => {
       const code = metricCode(key);
       if (code === "T" || key.toLowerCase().includes("temp")) return 0;
       if (code === "H" || key.toLowerCase().includes("hum")) return 1;
       if (code === "P") return 2;
-      if (code === "L" || key.toLowerCase().includes("ldr")) return 3;
-      return 4;
+      if (isSoundKey(key)) return 3;
+      if (code === "L" || key.toLowerCase().includes("ldr")) return 4;
+      return 5;
     };
     const priorityDiff = priority(a) - priority(b);
     if (priorityDiff) return priorityDiff;
     return a.localeCompare(b);
   });
+}
 
-  return sorted.slice(0, 2).map((k, idx) => {
+/* Series plotted on the trend chart: "AUTO" leans on the metric priority and
+   keeps two axis scales, an explicit pick plots that one metric alone. */
+function chartKeys(samples) {
+  const metaUnits = (state.nodes.get(state.selected) || {}).units || {};
+  const sorted = sampleMetricKeys(samples);
+  const forced = state.chartSeriesKey && sorted.includes(state.chartSeriesKey);
+  const chosen = forced ? [state.chartSeriesKey] : sorted.slice(0, 2);
+
+  return chosen.map((k, idx) => {
     const code = metricCode(k);
-    const defaultUnit = ["L", "T", "H", "P"].includes(code)
+    const defaultUnit = KNOWN_CODES.includes(code)
       ? metricDefaultUnit(k)
       : metaUnits[k] || metricDefaultUnit(k);
 
@@ -759,6 +786,48 @@ function chartKeys(samples) {
       axis: idx === 1 ? "right" : "left",
     };
   });
+}
+
+/* Sound has a relative unit, so it gets its own series colour instead of
+   borrowing the temperature amber. Humidity keeps its grey even when it is the
+   only series plotted, so the legend colour does not change with the selection. */
+function seriesColor(metric, index) {
+  if (isSoundKey(metric.key)) return token("--color-series-sound", "#73b7d6");
+  const code = metricCode(metric.key);
+  const humidity = code === "H" || metric.key.toLowerCase().includes("hum");
+  if (humidity || index === 1) return token("--color-series-humidity", "#a8a69b");
+  return token("--color-series-temp", "#ffb454");
+}
+
+let chartSeriesSignature = "";
+
+function syncChartSeriesOptions(samples) {
+  if (!els.chartSeries) return;
+  const keys = sampleMetricKeys(samples);
+  const signature = keys.join("|");
+
+  if (signature !== chartSeriesSignature) {
+    chartSeriesSignature = signature;
+    const options = document.createDocumentFragment();
+    const auto = document.createElement("option");
+    auto.value = "";
+    auto.textContent = "AUTO (TOP 2)";
+    options.appendChild(auto);
+    for (const key of keys) {
+      const option = document.createElement("option");
+      option.value = key;
+      const unit = metricDefaultUnit(key);
+      option.textContent = `${formatMetricLabel(key)}${unit ? ` (${unit})` : ""}`;
+      options.appendChild(option);
+    }
+    els.chartSeries.replaceChildren(options);
+  }
+
+  if (state.chartSeriesKey && !keys.includes(state.chartSeriesKey)) {
+    state.chartSeriesKey = null;
+  }
+  els.chartSeries.value = state.chartSeriesKey || "";
+  els.chartSeries.disabled = !keys.length;
 }
 
 const GAP_FACTOR = 3;
@@ -793,11 +862,6 @@ function drawChart() {
 
   const grid = token("--line", "#2e3237");
   const faint = token("--text-faint", "#8a897f");
-  const seriesColors = [
-    token("--color-series-temp", "#ffb454"),
-    token("--color-series-humidity", "#a8a69b"),
-    token("--live", "#6fbf73"),
-  ];
   const fontStack = token("--font-mono", "monospace");
   cctx.font = "10px " + fontStack;
   cctx.lineWidth = 1;
@@ -816,18 +880,20 @@ function drawChart() {
     cctx.fillText(fmtClock(t, span <= 3600000), tToX(t), h - pad.b + 16);
   }
 
+  syncChartSeriesOptions(samples);
   const keys = chartKeys(samples);
 
   if (els.chartLegend) {
     els.chartLegend.innerHTML = keys
       .map((m, ki) => {
-        const color = seriesColors[ki] || seriesColors[0];
+        const color = seriesColor(m, ki);
         return `<span class="legend-item"><i class="legend-swatch" style="background:${color}"></i><span>${m.label}${m.unit ? ` (${m.unit})` : ""}</span></span>`;
       })
       .join("");
   }
 
   keys.forEach((m, ki) => {
+    const color = seriesColor(m, ki);
     const fs = samples.filter((s) => Number.isFinite(s[m.key]));
     if (!fs.length) return;
     const vals = fs.map((s) => s[m.key]);
@@ -871,7 +937,7 @@ function drawChart() {
       });
 
       // Draw axis unit clean above the axis line
-      cctx.fillStyle = seriesColors[ki] || seriesColors[0];
+      cctx.fillStyle = color;
       cctx.textAlign = ki === 0 ? "right" : "left";
       cctx.fillText(m.unit || "", ki === 0 ? axX - 6 : axX + 6, pad.t - 8);
     }
@@ -882,7 +948,7 @@ function drawChart() {
     cctx.rect(pad.l, pad.t, w - pad.l - pad.r, h - pad.t - pad.b);
     cctx.clip();
 
-    cctx.strokeStyle = seriesColors[ki] || seriesColors[0];
+    cctx.strokeStyle = color;
     cctx.lineWidth = 1.75;
     let pen = false;
     for (let i = 0; i < samples.length; i++) {
@@ -1006,7 +1072,7 @@ function comparisonUnit(key) {
       const sampleUnits = samples[samples.length - 1]?.units || {};
       const nodeUnits = state.nodes.get(nodeId)?.units || {};
       const code = metricCode(key);
-      return ["L", "T", "H", "P"].includes(code)
+      return KNOWN_CODES.includes(code)
         ? metricDefaultUnit(key)
         : sampleUnits[key] || nodeUnits[key] || metricDefaultUnit(key);
     }
@@ -1210,6 +1276,17 @@ function initComparisonView() {
   });
   const compareResizeObserver = new ResizeObserver(scheduleComparisonDraw);
   compareResizeObserver.observe(els.compareChartFrame);
+}
+
+/* The trend chart shows the top two metrics by default; this lets one metric
+   (for example the relative sound level) own the chart on its own scale. */
+function initChartSeries() {
+  if (!els.chartSeries) return;
+  els.chartSeries.addEventListener("change", () => {
+    state.chartSeriesKey = els.chartSeries.value || null;
+    scheduleChartDraw();
+    renderChartTable(state.samples.get(state.selected) || []);
+  });
 }
 
 /* ---------- automated insights ---------- */
@@ -1569,7 +1646,7 @@ function onTelemetry(msg) {
     Object.entries(msg.payload || {})
       .map(([k, v]) => {
         const code = metricCode(k);
-        const unit = ["L", "T", "H", "P"].includes(code)
+        const unit = KNOWN_CODES.includes(code)
           ? metricDefaultUnit(k)
           : (msg.units && msg.units[k]) || metricDefaultUnit(k);
         return `${formatMetricLabel(k)} ${Number.isFinite(Number(v)) ? Number(v) : v}${unit ? ` ${unit}` : ""}`;
@@ -1828,6 +1905,7 @@ function initChatEvents() {
 refreshHealth().then(refreshNodes).then(() => {
   applyStation();
   drawChart();
+  initChartSeries();
   initComparisonView();
   initMeshControls();
   initChatEvents();

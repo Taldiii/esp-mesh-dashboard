@@ -429,3 +429,88 @@ The prototype is complete when:
 - The dashboard updates when the node publishes new data.
 - The receiver handles invalid messages without stopping.
 - The project has at least one automated parser test and one browser smoke test.
+
+## Phase 8 — Add the Sound Level Metric (MAX4466)
+
+### Purpose
+
+Report the noise environment of each station as a third live measurement, so the dashboard, the insight engine and the AI assistant can see it next to temperature and humidity.
+
+### Hardware
+
+| MAX4466 module | ESP32 dev board | Note |
+|---|---|---|
+| VCC | 3V3 | Never 5 V: the output sits at VCC/2, so 5 V raises the idle level above the ADC range |
+| GND | GND | Common ground with the node |
+| OUT | GPIO34 (ADC1_CH6) | GPIO34–39 are input-only ADC1 pins; ADC2 is unusable while Wi-Fi is on |
+
+Set the on-board gain pot so the loudest expected sound still peaks below full scale. Clipping destroys the level information.
+
+### Metric contract
+
+| Field | Value |
+|---|---|
+| Payload key | `S` (compact firmware JSON), or any key whose last segment is `s`, `db`, `dbfs`, `spl`, or that contains `sound`, `mic`, `noise`, `audio` |
+| Unit | `dBFS` — relative to ADC full scale |
+| Range | `-90` (silence floor) to `0` (signal spanning the whole ADC range) |
+| Display | "Sound level", 1 decimal place |
+
+Sound is a **relative** level, not dB SPL. A MAX4466 board has no acoustic reference and its gain is a trim pot, so values are only comparable across windows from the same node with the same pot position.
+
+$$
+L_{\mathrm{dBFS}} = 20 \log_{10}\left(\frac{\mathrm{RMS}_{\mathrm{AC}}}{2048}\right)
+$$
+
+where:
+
+- $\mathrm{RMS}_{\mathrm{AC}}$ = RMS of the signal after removing its DC bias, in ADC counts.
+- $2048$ = half of the 12-bit ADC range, the reference amplitude.
+
+A rise of 6 dB is roughly double the signal amplitude, or four times the acoustic power.
+
+### Firmware
+
+`SoundSensor` samples one window (default 50 ms) and derives the AC RMS from a running sum and sum of squares, so no sample buffer is needed:
+
+1. Accumulate `sum` and `sumSquares` over the window.
+2. `mean = sum / N` is the DC bias of the module; `meanSquare = sumSquares / N`.
+3. `acRms = sqrt(max(0, meanSquare - mean^2))`.
+4. Convert to dBFS, clamp to `[-90, 0]`, emit `{'S', level}`.
+
+Payload example at a 3 s report interval:
+
+```json
+{"L":1180,"T":26.4,"H":61,"P":100850,"S":-38.5}
+```
+
+### Dashboard behaviour
+
+- Metric strip: a "SOUND LEVEL" card next to temperature and humidity.
+- Trend chart: the `SERIES` selector defaults to `AUTO (TOP 2)`; picking "Sound level" plots that metric alone on the left axis with a distinct colour.
+- Compare Nodes: the measurement dropdown lists Sound level for cross-station comparison.
+- Automated Insights: trend and >2σ anomaly rules run on the sound metric with no extra wiring.
+- Event log: sound appears in the per-sample summary line.
+- AI assistant: grounding gains a sound block (latest, peak, baseline mean, noise-event flag) and the prompt forbids presenting it as a calibrated dB SPL reading.
+
+### What it is for
+
+- Noise events: a clap, door, alarm or machine start shows up as a spike above the node's own baseline.
+- Quiet-hours and occupancy proxy: sustained level changes indicate activity near the station.
+- Cross-metric correlation: an air conditioner raises noise and changes temperature at the same time.
+- Enclosure tampering: a sudden loud transient near the node.
+
+Absolute noise compliance (for example a 55 dBA night limit) needs a calibrated meter, not a MAX4466.
+
+### Verification
+
+```bash
+# backend (skip the POSIX-only PTY test on Windows)
+python -m pytest tests -q --ignore=tests/test_serial_pty_e2e.py
+
+# firmware
+pio run -d mesh-node
+
+# dashboard against simulated nodes (injects a noise event at sample 26)
+python simulate_mesh.py
+```
+

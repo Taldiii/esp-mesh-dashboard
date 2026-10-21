@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ESP32 Mesh Telemetry — Observer</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.10" />
+    <link rel="stylesheet" href="/static/styles.css?v=3.15" />
   </head>
   <body>
     <div class="app-shell">
@@ -125,7 +125,14 @@
               <h3>TELEMETRY <span id="chart-node" class="mono-dim">station</span> <span id="chart-seq" class="mono-dim"></span></h3>
               <div id="chart-legend" class="chart-legend"></div>
             </div>
-            <span id="updated-at" class="mono-dim">—</span>
+            <div class="chart-header-right">
+              <label class="compare-measurement-label" for="chart-series">SERIES
+                <select id="chart-series" class="compare-measurement chart-series" aria-label="Telemetry series to plot">
+                  <option value="">AUTO (TOP 2)</option>
+                </select>
+              </label>
+              <span id="updated-at" class="mono-dim">—</span>
+            </div>
           </div>
           <div class="chart-frame" id="chart-frame">
             <canvas id="telemetry-chart" aria-label="Telemetry trend chart for the selected station" role="img"></canvas>
@@ -224,6 +231,6 @@
       </button>
     </div>
 
-    <script src="/static/app.js?v=3.10"></script>
+    <script src="/static/app.js?v=3.12"></script>
   </body>
 </html>

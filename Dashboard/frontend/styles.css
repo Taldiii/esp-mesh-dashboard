@@ -48,6 +48,7 @@
 
   --color-series-temp: var(--warning);
   --color-series-humidity: var(--text-dim);
+  --color-series-sound: #73b7d6;
   --color-compare-3: #6fbf73;
   --color-compare-4: #ee5a5f;
   --color-compare-5: #73b7d6;
@@ -446,6 +447,34 @@ button, input {
   border-bottom: 1px solid var(--line);
 }
 
+/* When the strip wraps, the row above already ends in a rule (mesh controls /
+   previous row), so only the first card of every wrapped row needs a top rule.
+   Track counts: 4 columns on desktop, 2 at <=760px, 1 at <=480px. */
+.metric-strip > *:nth-child(n + 5) {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .metric-strip > *:nth-child(n + 5) { border-top: 0; }
+  .metric-strip > *:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+
+@media (max-width: 480px) {
+  .metric-strip > *:nth-child(n + 3) { border-top: 0; }
+  .metric-strip > *:nth-child(n + 2) { border-top: 1px solid var(--line); }
+}
+
+/* A card left alone on the last row (5th, 9th, ... in a 4-track grid) fills the
+   row, so its top rule reads as one continuous divider instead of a stub. */
+.metric-strip > *:last-child:nth-child(4n + 1) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .metric-strip > *:last-child:nth-child(4n + 1) { grid-column: auto; }
+  .metric-strip > *:last-child:nth-child(2n + 1) { grid-column: 1 / -1; }
+}
+
 .mesh-controls {
   padding: var(--sp-md) 0;
   border-bottom: 1px solid var(--line);
@@ -835,6 +864,18 @@ button, input {
   flex-wrap: wrap;
 }
 
+/* Series picker sits with the "updated at" stamp on the right of the chart header. */
+.chart-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  flex: none;
+}
+
+.chart-series {
+  min-width: 130px;
+}
+
 .chart-legend {
   display: flex;
   align-items: center;
@@ -1189,6 +1230,7 @@ button, input {
   .compare-header { align-items: flex-start; flex-direction: column; }
   .compare-measurement-label { width: 100%; justify-content: space-between; }
   .compare-measurement { min-width: 0; flex: 1; }
+  .chart-header-right { flex-wrap: wrap; justify-content: flex-end; }
 }
 
 @media (max-width: 480px) {
