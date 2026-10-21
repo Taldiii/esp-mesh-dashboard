@@ -100,6 +100,9 @@ const state = {
 
 const ageSeconds = (ts) => Math.max(0, (Date.now() - Date.parse(ts)) / 1000);
 
+/* Friendly station name from NODE_ALIASES, falling back to the raw id. */
+const nodeLabel = (nodeId) => (state.nodes.get(nodeId) || {}).displayName || nodeId;
+
 function ageText(sec) {
   if (!Number.isFinite(sec)) return "—";
   if (sec < 3) return "just now";
@@ -149,7 +152,7 @@ function pushLog(kind, nodeId, text) {
   if (els.logEmpty && els.logEmpty.isConnected) els.logEmpty.remove();
   const li = document.createElement("li");
   if (kind === "dropped") li.dataset.kind = "dropped";
-  li.innerHTML = `<b>${escapeHtml(nodeId)}</b><span>${new Date().toLocaleTimeString()} · ${escapeHtml(text)}</span>`;
+  li.innerHTML = `<b>${escapeHtml(nodeLabel(nodeId))}</b><span>${new Date().toLocaleTimeString()} · ${escapeHtml(text)}</span>`;
   els.eventLog.prepend(li);
   while (els.eventLog.children.length > MAX_LOG) els.eventLog.lastChild.remove();
 }
@@ -430,7 +433,7 @@ function renderRoster() {
     const rssi = hasRssi ? Number(node.rssi) : NaN;
     const bat = Number(node.batteryLevel);
     const isSelected = String(node.nodeId === state.selected);
-    const srcText = node.rssiSourceNodeId ? ` via ${node.rssiSourceNodeId}` : "";
+    const srcText = node.rssiSourceNodeId ? ` via ${nodeLabel(node.rssiSourceNodeId)}` : "";
 
     let row = existingRows.get(node.nodeId);
     if (!row) {
@@ -446,7 +449,7 @@ function renderRoster() {
     row.dataset.selected = isSelected;
     row.setAttribute("aria-pressed", isSelected);
     row.innerHTML = `
-      <span class="station-id">${node.nodeId}</span>
+      <span class="station-id">${escapeHtml(node.displayName || node.nodeId)}</span>
       <span class="station-meta">
         <span class="sig-bars" data-level="${hasRssi ? rssiLevel(rssi) : 0}">
           <i class="sig-bar"></i><i class="sig-bar"></i><i class="sig-bar"></i><i class="sig-bar"></i>
@@ -512,7 +515,7 @@ function metricCards(values, node) {
   const hasRssi = node && node.rssi !== null && node.rssi !== undefined && Number.isFinite(Number(node.rssi));
   if (hasRssi) {
     const subParts = [];
-    if (node.rssiSourceNodeId) subParts.push(`via ${node.rssiSourceNodeId}`);
+    if (node.rssiSourceNodeId) subParts.push(`via ${nodeLabel(node.rssiSourceNodeId)}`);
     if (Number.isInteger(node.hops)) subParts.push(`${node.hops} hop${node.hops === 1 ? "" : "s"}`);
     cards.push({
       label: "LAST-HOP RSSI",
@@ -771,7 +774,7 @@ function drawChart() {
   cctx.clearRect(0, 0, w, h);
 
   const samples = state.samples.get(state.selected) || [];
-  els.chartNode.textContent = state.selected || "station";
+  els.chartNode.textContent = state.selected ? nodeLabel(state.selected) : "station";
   els.chartEmpty.style.display = samples.length ? "none" : "flex";
   if (!samples.length) {
     if (els.chartLegend) els.chartLegend.replaceChildren();
@@ -1160,7 +1163,7 @@ function drawComparisonChart() {
     swatch.className = "legend-swatch";
     swatch.style.backgroundColor = item.color;
     const label = document.createElement("span");
-    label.textContent = item.nodeId;
+    label.textContent = nodeLabel(item.nodeId);
     entry.append(swatch, label);
     legend.appendChild(entry);
   }
@@ -1221,8 +1224,9 @@ async function loadInsights(nodeId) {
     return;
   }
 
-  const isNodeChange = els.insightsNode.textContent !== nodeId;
-  els.insightsNode.textContent = nodeId;
+  const isNodeChange = els.insightsNode.dataset.nodeId !== nodeId;
+  els.insightsNode.dataset.nodeId = nodeId;
+  els.insightsNode.textContent = nodeLabel(nodeId);
   els.insightsUpdatedAt.textContent = "updating…";
   if (isNodeChange) {
     els.insightsContent.replaceChildren();
@@ -1347,11 +1351,13 @@ function selectStation(id) {
   if (state.selected === id) return;
   state.selected = id;
   if (els.chatContextNode) {
-    els.chatContextNode.textContent = state.chatScope === "all" ? "ALL STATIONS" : (id || "ALL STATIONS");
+    els.chatContextNode.textContent =
+      state.chatScope === "all" || !id ? "ALL STATIONS" : nodeLabel(id);
   }
   renderRoster();
   els.insightsContent.replaceChildren();
-  els.insightsNode.textContent = id;
+  els.insightsNode.dataset.nodeId = id;
+  els.insightsNode.textContent = nodeLabel(id);
   els.insightsUpdatedAt.textContent = "updating…";
 
   applyStation();
@@ -1750,7 +1756,8 @@ function initChatEvents() {
     els.chatContextNode.title = "Click to toggle between active station and all-stations mesh summary";
     els.chatContextNode.addEventListener("click", () => {
       state.chatScope = state.chatScope === "all" ? "selected" : "all";
-      els.chatContextNode.textContent = state.chatScope === "all" ? "ALL STATIONS" : (state.selected || "ALL STATIONS");
+      els.chatContextNode.textContent =
+        state.chatScope === "all" || !state.selected ? "ALL STATIONS" : nodeLabel(state.selected);
       appendChatMessage(
         "assistant",
         state.chatScope === "all"

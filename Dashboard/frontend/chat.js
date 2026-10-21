@@ -19,6 +19,8 @@ const state = {
   scope: "all",
 };
 
+const nodeNames = new Map();
+
 /* ---------- transcript ---------- */
 
 function persist() {
@@ -127,7 +129,8 @@ async function loadNodes() {
     nodes.forEach((node) => {
       const option = document.createElement("option");
       option.value = node.nodeId;
-      option.textContent = node.nodeId;
+      option.textContent = node.displayName || node.nodeId;
+      nodeNames.set(node.nodeId, node.displayName || node.nodeId);
       els.scope.appendChild(option);
     });
     if (wanted && nodes.some((n) => n.nodeId === wanted)) {
@@ -203,7 +206,7 @@ els.scope.addEventListener("change", () => {
     "assistant",
     state.scope === "all"
       ? "Context switched to ALL STATIONS (entire mesh network)."
-      : `Context switched to ${state.scope}.`
+      : `Context switched to ${nodeNames.get(state.scope) || state.scope}.`
   );
 });
 

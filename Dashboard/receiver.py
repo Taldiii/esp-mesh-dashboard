@@ -1,3 +1,4 @@
+import json
 import os
 import socket
 import threading
@@ -5,6 +6,24 @@ from collections.abc import MutableSet
 
 from history import HistoryBuffer
 from mesh_protocol import normalize_message
+
+
+def node_aliases():
+    """Optional friendly names: NODE_ALIASES={"AA:BB:..":"Tentative 1"}."""
+    raw = os.getenv("NODE_ALIASES", "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): str(value).strip() for key, value in data.items() if str(value).strip()}
+
+
+def node_display_name(node_id):
+    return node_aliases().get(node_id) or node_id
 
 
 class MeshReceiver:
@@ -118,6 +137,7 @@ class MeshReceiver:
 
         state = {
             "nodeId": node_id,
+            "displayName": node_display_name(node_id),
             "timestamp": message["timestamp"],
             "sequence": sequence,
             "payload": message["payload"],
@@ -156,6 +176,7 @@ class MeshReceiver:
         event = {
             "type": "telemetry",
             "nodeId": node_id,
+            "displayName": state["displayName"],
             "timestamp": message["timestamp"],
             "sequence": sequence,
             "payload": message["payload"],
@@ -185,6 +206,7 @@ class MeshReceiver:
             return None
         res = {
             "nodeId": node["nodeId"],
+            "displayName": node.get("displayName") or node_display_name(node["nodeId"]),
             "timestamp": node["timestamp"],
             "sequence": node["sequence"],
             "payload": node["payload"],

@@ -77,9 +77,11 @@ def build_grounding_context(receiver: Any, selected_node_id: Optional[str] = Non
 
     nodes_context = []
     now = datetime.now(timezone.utc)
+    labels = {n.get("nodeId"): (n.get("displayName") or n.get("nodeId")) for n in all_nodes}
 
     for node in all_nodes:
         nid = node.get("nodeId", "unknown")
+        label = node.get("displayName") or nid
         seq = node.get("sequence")
         rssi = node.get("rssi")
         rssi_src = node.get("rssiSourceNodeId")
@@ -99,6 +101,7 @@ def build_grounding_context(receiver: Any, selected_node_id: Optional[str] = Non
 
         node_info = {
             "nodeId": nid,
+            "displayName": label,
             "sequence": seq,
             "lastSeenAgeSec": age_sec,
             "rssi": f"{rssi} dBm" if rssi is not None else "unavailable",
@@ -111,8 +114,9 @@ def build_grounding_context(receiver: Any, selected_node_id: Optional[str] = Non
 
         readings_str = ", ".join(f"{k}: {v}" for k, v in node_info["readings"].items()) or "no readings"
         summary_lines.append(
-            f"- Station {nid}: seq={seq}, age={age_sec}s, RSSI={node_info['rssi']} "
-            f"(via {rssi_src or nid}, {hops or 1} hop(s)), battery={node_info['battery']}, readings=[{readings_str}]"
+            f"- Station {label} ({nid}): seq={seq}, age={age_sec}s, RSSI={node_info['rssi']} "
+            f"(via {labels.get(rssi_src, rssi_src) or label}, {hops or 1} hop(s)), "
+            f"battery={node_info['battery']}, readings=[{readings_str}]"
         )
 
     selected_context = None
@@ -156,6 +160,7 @@ def build_grounding_context(receiver: Any, selected_node_id: Optional[str] = Non
 
             selected_context = {
                 "nodeId": selected_node_id,
+                "displayName": selected_node.get("displayName") or selected_node_id,
                 "latestPayload": payload,
                 "sampleCount": len(history),
                 "weatherAnalysis": weather_analysis,
@@ -164,7 +169,7 @@ def build_grounding_context(receiver: Any, selected_node_id: Optional[str] = Non
 
             if weather_analysis:
                 summary_lines.append(
-                    f"\nDetailed Physical Analysis for {selected_node_id}:\n"
+                    f"\nDetailed Physical Analysis for {selected_context['displayName']}:\n"
                     f"  Temperature: {weather_analysis['temperatureC']} °C, Humidity: {weather_analysis['relativeHumidityPercent']} %RH\n"
                     f"  Dew Point: {weather_analysis['dewPointC']} °C (Depression: {weather_analysis['dewPointDepressionC']} °C)\n"
                     f"  Rain/Condensation Assessment: {weather_analysis['assessment']}"
