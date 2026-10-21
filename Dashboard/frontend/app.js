@@ -59,6 +59,7 @@ const els = {
   chatBlock: document.getElementById("chat-block"),
   aiModelTag: document.getElementById("ai-model-tag"),
   chatClearBtn: document.getElementById("chat-clear-btn"),
+  chatExpandBtn: document.getElementById("chat-expand-btn"),
   chatMessages: document.getElementById("chat-messages"),
   chatForm: document.getElementById("chat-form"),
   chatInput: document.getElementById("chat-input"),
@@ -1662,6 +1663,7 @@ async function sendChatMessage(promptText) {
 
   appendChatMessage("user", text);
   state.chatHistory.push({ role: "user", content: text });
+  persistChatHistory();
 
   const pendingMsg = appendChatMessage("assistant", "thinking…");
 
@@ -1682,6 +1684,7 @@ async function sendChatMessage(promptText) {
     const reply = data.reply || (data.error ? "Error: " + data.reply : "No response from AI.");
     appendChatMessage("assistant", reply);
     state.chatHistory.push({ role: "assistant", content: reply });
+    persistChatHistory();
 
     if (data.model && els.aiModelTag) {
       els.aiModelTag.textContent = data.model.toUpperCase();
@@ -1700,6 +1703,23 @@ async function sendChatMessage(promptText) {
   }
 }
 
+const CHAT_STORE = "espMeshChatHistory";
+
+/* The expanded tab shares this transcript, so the two views stay in sync. */
+function persistChatHistory() {
+  try {
+    localStorage.setItem(CHAT_STORE, JSON.stringify(state.chatHistory.slice(-40)));
+  } catch {
+    /* storage blocked: chat still works, the pop-out just starts empty */
+  }
+}
+
+function openExpandedChat() {
+  const node = state.chatScope === "all" ? "" : (state.selected || "");
+  const win = window.open(`/static/chat.html?node=${encodeURIComponent(node)}`, "mesh-ai-chat");
+  if (win) win.focus();
+}
+
 function initChatEvents() {
   if (els.chatForm) {
     els.chatForm.addEventListener("submit", (e) => {
@@ -1708,9 +1728,18 @@ function initChatEvents() {
     });
   }
 
+  if (els.chatExpandBtn) {
+    els.chatExpandBtn.addEventListener("click", openExpandedChat);
+  }
+
   if (els.chatClearBtn) {
     els.chatClearBtn.addEventListener("click", () => {
       state.chatHistory = [];
+      try {
+        localStorage.removeItem(CHAT_STORE);
+      } catch {
+        /* ignore */
+      }
       if (els.chatMessages) {
         els.chatMessages.replaceChildren();
         appendChatMessage("assistant", "Chat history cleared. Ready for your questions.");

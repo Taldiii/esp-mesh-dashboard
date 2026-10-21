@@ -1192,3 +1192,108 @@ button, input {
 @media (prefers-reduced-motion: reduce) {
   .healthbar-seg { transition: none; }
 }
+
+/* ---- expanded AI chat (own tab) ---- */
+
+.chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.chat-page {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+}
+
+.chat-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+  padding: var(--sp-md) var(--sp-lg);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.chat-page-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-page-title .chat-title {
+  font-size: 0.875rem;
+}
+
+.chat-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+}
+
+.chat-scope-select {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--background);
+  border: 1px solid var(--line);
+  color: var(--warning);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.chat-scope-select:hover,
+.chat-scope-select:focus {
+  border-color: var(--warning);
+  outline: none;
+}
+
+.chat-page-body {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.chat-page-body .chat-messages {
+  width: min(960px, 100%);
+  padding: var(--sp-md);
+  gap: var(--sp-sm);
+  font-size: 0.8125rem;
+}
+
+.chat-page-body .chat-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.chat-page-footer {
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+  padding: var(--sp-md) var(--sp-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  align-items: center;
+}
+
+.chat-page-footer > * {
+  width: min(960px, 100%);
+}
+
+@media (max-width: 760px) {
+  .chat-page-head { padding: var(--sp-sm) var(--sp-md); }
+  .chat-page-footer { padding: var(--sp-sm) var(--sp-md); }
+}
+

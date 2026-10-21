@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ESP32 Mesh Telemetry — Observer</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.3" />
+    <link rel="stylesheet" href="/static/styles.css?v=3.5" />
   </head>
   <body>
     <div class="app-shell">
@@ -178,7 +178,10 @@
             <h3 class="chat-title">AI ASSISTANT <span id="ai-model-tag" class="tag" data-state="live">DEEPSEEK</span></h3>
             <span class="panel-subtitle">TELEMETRY RAG · DEW POINT PHYSICS</span>
           </div>
-          <button type="button" id="chat-clear-btn" class="btn-text" title="Clear chat history">CLEAR</button>
+          <div class="chat-head-actions">
+            <button type="button" id="chat-expand-btn" class="btn-text" title="Open the AI chat in a full-page tab">EXPAND &#8599;</button>
+            <button type="button" id="chat-clear-btn" class="btn-text" title="Clear chat history">CLEAR</button>
+          </div>
         </header>
 
         <div class="chat-context-bar">
@@ -211,6 +214,6 @@
       </aside>
     </div>
 
-    <script src="/static/app.js?v=3.3"></script>
+    <script src="/static/app.js?v=3.5"></script>
   </body>
 </html>

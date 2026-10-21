@@ -105,7 +105,7 @@ def test_ask_mesh_ai_opencode_deepseek_flash_chat_completions(monkeypatch):
         assert str(request.url) == "https://opencode.ai/inference/openai/v1/chat/completions"
         body = json.loads(request.content.decode("utf-8"))
         assert body["model"] == "deepseek-v4.1-flash-free"
-        assert body["max_tokens"] == 800
+        assert body["max_tokens"] == 350
         assert any(item["role"] == "system" for item in body["messages"])
         return httpx.Response(
             200,

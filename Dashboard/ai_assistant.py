@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
@@ -31,26 +32,36 @@ def get_ai_config() -> Dict[str, Any]:
     api_key = os.getenv("AI_API_KEY", "").strip()
     default_base_url = (
         "https://opencode.ai/inference/openai/v1"
-        if provider == "opencode"
+        if provider.startswith("opencode")
         else "https://api.deepseek.com"
     )
-    default_model = "deepseek-v4.1-flash-free" if provider == "opencode" else "deepseek-chat"
+    default_model = (
+        "deepseek-v4.1-flash-free" if provider.startswith("opencode") else "deepseek-chat"
+    )
     base_url = os.getenv("AI_BASE_URL", default_base_url).strip().rstrip("/")
     model = os.getenv("AI_MODEL", default_model).strip()
-    if provider == "opencode":
-        api_format = (
+    if provider.startswith("opencode"):
+        default_format = (
             "chat_completions"
-            if model == "deepseek-v4.1-flash-free"
+            if model.endswith("-free")
             else "responses"
         )
     else:
-        api_format = "chat_completions"
+        default_format = "chat_completions"
+    api_format = os.getenv("AI_API_FORMAT", "").strip().lower() or default_format
+    if api_format not in ("chat_completions", "responses"):
+        api_format = default_format
+    # OpenCode gateways route on a stable session id; without it they answer 400 MissingSessionID.
+    session_id = os.getenv("AI_SESSION_ID", "").strip() or str(
+        uuid.uuid5(uuid.NAMESPACE_DNS, "esp-mesh-dashboard.local")
+    )
     return {
         "api_key": api_key,
         "base_url": base_url,
         "model": model,
         "provider": provider,
         "api_format": api_format,
+        "session_id": session_id,
         "configured": bool(api_key),
     }
 
@@ -185,8 +196,13 @@ def build_system_prompt(grounding: Dict[str, Any]) -> str:
         "   - Use temperature, humidity, and dew point.\n"
         "   - Note that rain requires cooling near dew point and cloud condensation nuclei; hot, low-humidity air (like 40°C with 30% RH) has a large dew point depression (~19°C dew point), making rain very unlikely under stable conditions.\n"
         "   - Note that true barometric weather forecasting requires a barometric pressure sensor (e.g. BMP280/BME280).\n"
-        "4. Be technical, helpful, and concise. Avoid fluff or ungrounded speculation.\n"
-        "5. Provide output in clear plain text without markdown formatting (no asterisks, bolding, hashes, or backticks) so it renders cleanly in an instrument terminal."
+        "4. Be extremely brief. Default to one to three short sentences (under 45 words). "
+        "A full telemetry dump is forbidden unless the user explicitly asks for a report, "
+        "an audit, or a comparison.\n"
+        "5. Greetings, thanks and small talk get a single short line. Do not recite station "
+        "readings, statistics or trends unless the question actually needs them.\n"
+        "6. Name only the stations relevant to the question; never list every station by default.\n"
+        "7. Provide output in clear plain text without markdown formatting (no asterisks, bolding, hashes, or backticks) so it renders cleanly in an instrument terminal."
     )
 
 
@@ -233,17 +249,20 @@ async def ask_mesh_ai(
         "Authorization": f"Bearer {config['api_key']}",
         "Content-Type": "application/json",
     }
+    if config["provider"].startswith("opencode"):
+        headers["x-opencode-session"] = config["session_id"]
+        headers["User-Agent"] = os.getenv("AI_USER_AGENT", "esp-mesh-dashboard/1.0").strip()
     if api_format == "responses":
         payload = {
             "model": config["model"],
             "input": messages,
-            "max_output_tokens": 800,
+            "max_output_tokens": 350,
         }
     else:
         payload = {
             "model": config["model"],
             "messages": messages,
-            "max_tokens": 800,
+            "max_tokens": 350,
             "temperature": 0.3,
         }
 
@@ -267,7 +286,12 @@ async def ask_mesh_ai(
             if not reply_text:
                 raise ValueError("AI provider returned no assistant text in the Responses API result")
         else:
-            reply_text = data["choices"][0]["message"]["content"]
+            message = data["choices"][0]["message"]
+            reply_text = (message.get("content") or "").strip()
+            if not reply_text:
+                reply_text = (message.get("reasoning_content") or "").strip()
+            if not reply_text:
+                raise ValueError("AI provider returned an empty assistant message")
         return {
             "configured": True,
             "reply": reply_text,
@@ -276,10 +300,14 @@ async def ask_mesh_ai(
         }
     except httpx.HTTPStatusError as exc:
         logger.error("AI upstream HTTP error: %s - %s", exc.response.status_code, exc.response.text)
+        hint = ""
+        if exc.response.status_code in (401, 402, 403):
+            hint = " — check AI_API_KEY, account balance/credits, and provider access policy"
         return {
             "configured": True,
             "error": True,
-            "reply": f"AI provider error ({exc.response.status_code}): {exc.response.text}",
+            "model": config["model"],
+            "reply": f"AI provider error ({exc.response.status_code}){hint}: {exc.response.text}",
             "grounding": grounding,
         }
     except Exception as exc:
@@ -287,6 +315,7 @@ async def ask_mesh_ai(
         return {
             "configured": True,
             "error": True,
+            "model": config["model"],
             "reply": f"Unable to reach AI provider: {str(exc)}",
             "grounding": grounding,
         }

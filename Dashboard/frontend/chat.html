@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Assistant — ESP32 Mesh Telemetry</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="chat-page">
+    <header class="chat-page-head">
+      <div class="chat-page-title">
+        <h1 class="chat-title">
+          AI ASSISTANT
+          <span id="ai-model-tag" class="tag" data-state="live">DEEPSEEK</span>
+        </h1>
+        <span class="panel-subtitle">TELEMETRY RAG · DEW POINT PHYSICS · FULL VIEW</span>
+      </div>
+
+      <div class="chat-page-actions">
+        <span class="mono-dim">CONTEXT</span>
+        <select id="scope-select" class="chat-scope-select" aria-label="Chat context station">
+          <option value="all">ALL STATIONS</option>
+        </select>
+        <button type="button" id="chat-clear-btn" class="btn-text" title="Clear chat history">CLEAR</button>
+      </div>
+    </header>
+
+    <main class="chat-page-body">
+      <div class="chat-messages" id="chat-messages" role="log" aria-label="AI chat messages"></div>
+    </main>
+
+    <footer class="chat-page-footer">
+      <div class="chat-quick-prompts">
+        <span class="mono-dim prompt-hint">QUICK:</span>
+        <button type="button" class="quick-btn" data-prompt="What is the current health and routing status of the mesh network?">Mesh Status</button>
+        <button type="button" class="quick-btn" data-prompt="Analyze the current readings, signal quality, and trends for the selected station.">Diagnose Station</button>
+        <button type="button" class="quick-btn" data-prompt="Based on the current temperature and humidity readings, is rain likely? Explain the atmospheric physics.">Rain Assessment</button>
+        <button type="button" class="quick-btn" data-prompt="Audit all signal strengths (RSSI), hop counts, and battery levels across stations.">Signal Audit</button>
+      </div>
+
+      <form id="chat-form" class="chat-input-row">
+        <input type="text" id="chat-input" class="chat-input" placeholder="Ask AI about telemetry, signal, rain..." autocomplete="off" />
+        <button type="submit" id="chat-send-btn" class="chat-send-btn">SEND</button>
+      </form>
+    </footer>
+
+    <script src="/static/chat.js?v=1"></script>
+  </body>
+</html>

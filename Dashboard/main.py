@@ -6,7 +6,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+# Local overrides (untracked): keeps API keys out of the git-tracked .env file.
+load_dotenv(BASE_DIR / ".env.local", override=True)
 from typing import Any, Dict, List, Literal, Optional
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -18,7 +21,6 @@ from receiver import MeshReceiver
 
 logger = logging.getLogger("esp_mesh_dashboard")
 
-BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 receiver = MeshReceiver()
 
@@ -444,6 +446,7 @@ async def ai_status():
         "configured": config["configured"],
         "model": config["model"] if config["configured"] else None,
         "provider": config["provider"],
+        "baseUrl": config["base_url"],
     }
 
 
