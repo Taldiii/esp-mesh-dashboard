@@ -60,6 +60,8 @@ const els = {
   aiModelTag: document.getElementById("ai-model-tag"),
   chatClearBtn: document.getElementById("chat-clear-btn"),
   chatExpandBtn: document.getElementById("chat-expand-btn"),
+  chatCloseBtn: document.getElementById("chat-close-btn"),
+  chatOpenBtn: document.getElementById("chat-open-btn"),
   chatMessages: document.getElementById("chat-messages"),
   chatForm: document.getElementById("chat-form"),
   chatInput: document.getElementById("chat-input"),
@@ -1726,6 +1728,28 @@ function openExpandedChat() {
   if (win) win.focus();
 }
 
+const CHAT_VISIBLE_KEY = "espMeshChatVisible";
+
+/* Collapse the sidebar to give the charts the full width; the floating AI button brings it back. */
+function setChatVisible(visible, options = {}) {
+  if (!els.chatSidebar) return;
+  els.chatSidebar.classList.toggle("is-collapsed", !visible);
+  els.chatSidebar.setAttribute("aria-hidden", String(!visible));
+  if (els.chatOpenBtn) {
+    els.chatOpenBtn.dataset.visible = String(!visible);
+    els.chatOpenBtn.setAttribute("aria-expanded", String(visible));
+  }
+  try {
+    localStorage.setItem(CHAT_VISIBLE_KEY, visible ? "1" : "0");
+  } catch {
+    /* storage blocked: the toggle still works for this session */
+  }
+  if (visible) {
+    if (els.chatMessages) els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+    if (options.focus && els.chatInput) els.chatInput.focus();
+  }
+}
+
 function initChatEvents() {
   if (els.chatForm) {
     els.chatForm.addEventListener("submit", (e) => {
@@ -1736,6 +1760,21 @@ function initChatEvents() {
 
   if (els.chatExpandBtn) {
     els.chatExpandBtn.addEventListener("click", openExpandedChat);
+  }
+
+  let chatVisible = true;
+  try {
+    chatVisible = localStorage.getItem(CHAT_VISIBLE_KEY) !== "0";
+  } catch {
+    /* ignore */
+  }
+  setChatVisible(chatVisible);
+
+  if (els.chatCloseBtn) {
+    els.chatCloseBtn.addEventListener("click", () => setChatVisible(false));
+  }
+  if (els.chatOpenBtn) {
+    els.chatOpenBtn.addEventListener("click", () => setChatVisible(true, { focus: true }));
   }
 
   if (els.chatClearBtn) {
@@ -1772,6 +1811,13 @@ function initChatEvents() {
       const p = btn.getAttribute("data-prompt");
       if (p) sendChatMessage(p);
     });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !els.chatSidebar) return;
+    if (els.chatSidebar.classList.contains("is-collapsed")) return;
+    if (!els.chatSidebar.contains(document.activeElement)) return;
+    setChatVisible(false);
   });
 
   checkAiStatus();
